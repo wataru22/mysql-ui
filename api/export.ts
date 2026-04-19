@@ -1,6 +1,28 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { FieldPacket } from "mysql2";
+import { Types } from "mysql2";
+import type mysql from "mysql2/promise";
 import { withConnection } from "./_db";
 import { ansiDoubleQuotesToBackticks } from "./_sqlDump";
+
+function isJsonField(f: FieldPacket): boolean {
+  const t = f.columnType ?? f.type;
+  return t === Types.JSON;
+}
+
+function formatInsertValue(
+  conn: mysql.Connection,
+  v: unknown,
+  isJsonColumn: boolean
+): string {
+  if (v === null || v === undefined) return "NULL";
+  if (isJsonColumn) return conn.escape(JSON.stringify(v));
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "1" : "0";
+  if (v instanceof Date) return conn.escape(v);
+  if (Buffer.isBuffer(v)) return `X'${v.toString("hex")}'`;
+  return conn.escape(String(v));
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -52,8 +74,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         if (mode === "data" || mode === "both") {
-          const [rows] = await conn.query(`SELECT * FROM ${escapedTable}`);
+          const [rows, fields] = await conn.query(`SELECT * FROM ${escapedTable}`);
           const dataRows = rows as Record<string, unknown>[];
+          const fieldList = fields as FieldPacket[];
+          const jsonColumns = new Set(
+            fieldList.filter(isJsonField).map((f) => f.name)
+          );
 
           if (dataRows.length > 0) {
             lines.push(`-- ----------------------------`);
@@ -69,15 +95,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               const escapedCols = columns.map((c) => conn.escapeId(c)).join(", ");
 
               const values = batch.map((row) => {
-                const vals = columns.map((col) => {
-                  const v = row[col];
-                  if (v === null || v === undefined) return "NULL";
-                  if (typeof v === "number") return String(v);
-                  if (typeof v === "boolean") return v ? "1" : "0";
-                  if (v instanceof Date) return conn.escape(v);
-                  if (Buffer.isBuffer(v)) return `X'${v.toString("hex")}'`;
-                  return conn.escape(String(v));
-                });
+                const vals = columns.map((col) =>
+                  formatInsertValue(conn, row[col], jsonColumns.has(col))
+                );
                 return `(${vals.join(", ")})`;
               });
 
