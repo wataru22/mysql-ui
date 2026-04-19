@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { dropTable, renameTable, truncateTable, duplicateTable } from "@/lib/api";
+import { ExportDialog } from "@/components/export-dialog";
 import {
   MoreVertical,
   Edit3,
@@ -35,6 +36,7 @@ import {
   AlertTriangle,
   Copy,
   RefreshCw,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -49,6 +51,7 @@ export function TableToolbar({ table, onTableChanged, onRefresh }: Props) {
   const [truncateOpen, setTruncateOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [newName, setNewName] = useState("");
 
   const handleDrop = async () => {
@@ -135,6 +138,10 @@ export function TableToolbar({ table, onTableChanged, onRefresh }: Props) {
             >
               <Copy className="h-3.5 w-3.5 mr-2" />
               Duplicate table
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setExportOpen(true)}>
+              <Download className="h-3.5 w-3.5 mr-2" />
+              Export table
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setTruncateOpen(true)} className="text-amber-600">
@@ -245,6 +252,14 @@ export function TableToolbar({ table, onTableChanged, onRefresh }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Export dialog */}
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        tables={[table]}
+        singleTable={table}
+      />
     </>
   );
 }

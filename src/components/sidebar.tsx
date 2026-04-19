@@ -4,8 +4,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Table2, RefreshCw, Plus, Search } from "lucide-react";
+import { Table2, RefreshCw, Plus, Search, Download, Upload } from "lucide-react";
 import { CreateTableDialog } from "@/components/create-table-dialog";
+import { ExportDialog } from "@/components/export-dialog";
+import { ImportDialog } from "@/components/import-dialog";
 
 interface Props {
   databases: string[];
@@ -30,6 +32,8 @@ export function Sidebar({
 }: Props) {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const filteredTables = tables.filter((t) =>
     t.toLowerCase().includes(search.toLowerCase())
@@ -75,6 +79,23 @@ export function Sidebar({
           <Button
             variant="ghost"
             size="icon-sm"
+            onClick={() => setImportOpen(true)}
+            title="Import SQL"
+          >
+            <Upload className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setExportOpen(true)}
+            title="Export database"
+            disabled={tables.length === 0}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={() => setCreateOpen(true)}
             title="Create table"
           >
@@ -114,6 +135,20 @@ export function Sidebar({
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={onTableCreated}
+      />
+
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        tables={tables}
+        databaseName={currentDatabase}
+      />
+
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={onTableCreated}
+        currentDatabase={currentDatabase}
       />
     </div>
   );

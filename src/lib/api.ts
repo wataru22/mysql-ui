@@ -1,5 +1,6 @@
 import type {
   ConnectionConfig,
+  SavedConnection,
   TableColumn,
   TableIndex,
   TableDataResponse,
@@ -67,6 +68,35 @@ export function loadConnection(): ConnectionConfig | null {
 
 export function clearConnection() {
   localStorage.removeItem("db_connection");
+}
+
+// Saved connections
+const SAVED_CONNECTIONS_KEY = "db_saved_connections";
+
+export function getSavedConnections(): SavedConnection[] {
+  const raw = localStorage.getItem(SAVED_CONNECTIONS_KEY);
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveNamedConnection(conn: SavedConnection): void {
+  const existing = getSavedConnections();
+  const idx = existing.findIndex((c) => c.id === conn.id);
+  if (idx >= 0) {
+    existing[idx] = conn;
+  } else {
+    existing.push(conn);
+  }
+  localStorage.setItem(SAVED_CONNECTIONS_KEY, JSON.stringify(existing));
+}
+
+export function deleteSavedConnection(id: string): void {
+  const existing = getSavedConnections().filter((c) => c.id !== id);
+  localStorage.setItem(SAVED_CONNECTIONS_KEY, JSON.stringify(existing));
 }
 
 // Databases
@@ -228,4 +258,27 @@ export async function duplicateTable(name: string, newName: string): Promise<voi
     method: "POST",
     body: JSON.stringify({ action: "duplicate", name, newName }),
   });
+}
+
+// Import
+export async function importSql(
+  sql: string,
+  database?: string
+): Promise<{ total: number; executed: number; errors: { statement: number; error: string }[] }> {
+  return apiCall("/api/import", {
+    method: "POST",
+    body: JSON.stringify({ sql, database }),
+  });
+}
+
+// Export
+export async function exportTables(
+  tables: string[],
+  mode: "structure" | "data" | "both"
+): Promise<string> {
+  const data = await apiCall<{ sql: string }>("/api/export", {
+    method: "POST",
+    body: JSON.stringify({ tables, mode }),
+  });
+  return data.sql;
 }

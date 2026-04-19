@@ -157,7 +157,13 @@ export function DataTable({ table }: Props) {
   const handleCellSave = async (row: Record<string, unknown>, column: string, value: unknown) => {
     try {
       const pk = getPrimaryKey(row);
-      await updateRow(table, pk, { [column]: value });
+      const result = await updateRow(table, pk, { [column]: value });
+      if (result.affectedRows === 0) {
+        toast.error("Update failed", {
+          description: "No matching row found. The row may have been modified or deleted.",
+        });
+        return;
+      }
       toast.success("Cell updated");
       setEditCell(null);
       fetchData();
@@ -178,7 +184,7 @@ export function DataTable({ table }: Props) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b shrink-0">
         <div className="relative flex-1 max-w-sm">

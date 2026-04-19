@@ -42,26 +42,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .join(", ");
           const setValues = Object.keys(data).map((k) => data[k] === "" ? null : data[k]);
 
-          const whereClauses = Object.keys(primaryKey)
-            .map((k) => `${conn.escapeId(k)} = ?`)
+          // Build WHERE clause handling NULL values correctly:
+          // SQL requires `col IS NULL` instead of `col = NULL`
+          const whereKeys = Object.keys(primaryKey);
+          const whereClauses = whereKeys
+            .map((k) => primaryKey[k] === null || primaryKey[k] === undefined
+              ? `${conn.escapeId(k)} IS NULL`
+              : `${conn.escapeId(k)} = ?`)
             .join(" AND ");
-          const whereValues = Object.keys(primaryKey).map((k) => primaryKey[k]);
+          const whereValues = whereKeys
+            .filter((k) => primaryKey[k] !== null && primaryKey[k] !== undefined)
+            .map((k) => primaryKey[k]);
 
           const [result] = await conn.query(
             `UPDATE ${escapedTable} SET ${setClauses} WHERE ${whereClauses}`,
             [...setValues, ...whereValues]
           );
-          return { affectedRows: (result as { affectedRows: number }).affectedRows };
+          const affectedRows = (result as { affectedRows: number }).affectedRows;
+          if (affectedRows === 0) {
+            throw new Error("No matching row found to update");
+          }
+          return { affectedRows };
         }
 
         case "delete": {
           if (!primaryKey) {
             throw new Error("Primary key is required for delete");
           }
-          const whereClauses = Object.keys(primaryKey)
-            .map((k) => `${conn.escapeId(k)} = ?`)
+          const deleteWhereKeys = Object.keys(primaryKey);
+          const whereClauses = deleteWhereKeys
+            .map((k) => primaryKey[k] === null || primaryKey[k] === undefined
+              ? `${conn.escapeId(k)} IS NULL`
+              : `${conn.escapeId(k)} = ?`)
             .join(" AND ");
-          const whereValues = Object.keys(primaryKey).map((k) => primaryKey[k]);
+          const whereValues = deleteWhereKeys
+            .filter((k) => primaryKey[k] !== null && primaryKey[k] !== undefined)
+            .map((k) => primaryKey[k]);
 
           const [result] = await conn.query(
             `DELETE FROM ${escapedTable} WHERE ${whereClauses}`,

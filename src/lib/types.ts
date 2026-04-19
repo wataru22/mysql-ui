@@ -6,6 +6,17 @@ export interface ConnectionConfig {
   database?: string;
 }
 
+export interface SavedConnection extends ConnectionConfig {
+  id: string;
+  name: string;
+}
+
+export interface ConnectionTab {
+  id: string;
+  name: string;
+  config: ConnectionConfig;
+}
+
 export interface TableColumn {
   Field: string;
   Type: string;

@@ -1,229 +1,147 @@
-import { useState, useEffect, useCallback } from "react";
-import type { ConnectionConfig } from "@/lib/types";
-import { loadConnection, clearConnection, listDatabases, switchDatabase, listTables } from "@/lib/api";
+import { useState, useCallback } from "react";
+import type { ConnectionConfig, ConnectionTab } from "@/lib/types";
+import { saveConnection, clearConnection } from "@/lib/api";
 import { ConnectionForm } from "@/components/connection-form";
-import { Sidebar } from "@/components/sidebar";
-import { DataTable } from "@/components/data-table";
-import { StructureView } from "@/components/structure-view";
-import { SqlEditor } from "@/components/sql-editor";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TableToolbar } from "@/components/table-toolbar";
-import { Database, Terminal, Table2, Columns3, LogOut } from "lucide-react";
+import { ConnectionPanel } from "@/components/connection-panel";
+import { Database, Plus, X, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export default function App() {
-  const [connection, setConnection] = useState<ConnectionConfig | null>(null);
-  const [databases, setDatabases] = useState<string[]>([]);
-  const [tables, setTables] = useState<string[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("data");
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [tabs, setTabs] = useState<ConnectionTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [showNewConnection, setShowNewConnection] = useState(true);
 
-  // Check for saved connection on mount
-  useEffect(() => {
-    const saved = loadConnection();
-    if (saved?.database) {
-      setConnection(saved);
-    }
+  const activeTab = tabs.find((t) => t.id === activeTabId) || null;
+
+  const handleConnect = useCallback((config: ConnectionConfig) => {
+    const id = crypto.randomUUID();
+    const name = config.database
+      ? `${config.database}@${config.host}`
+      : `${config.user}@${config.host}:${config.port}`;
+    const tab: ConnectionTab = { id, name, config };
+
+    saveConnection(config);
+    setTabs((prev) => [...prev, tab]);
+    setActiveTabId(id);
+    setShowNewConnection(false);
   }, []);
 
-  // Load databases and tables when connection changes
-  useEffect(() => {
-    if (!connection) return;
-
-    const load = async () => {
-      try {
-        const dbs = await listDatabases();
-        setDatabases(dbs);
-        if (connection.database) {
-          const tbls = await listTables();
-          setTables(tbls);
+  const handleCloseTab = useCallback((id: string) => {
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      // If we closed the active tab, switch to another or show new connection
+      if (id === activeTabId) {
+        if (next.length > 0) {
+          const closedIdx = prev.findIndex((t) => t.id === id);
+          const newIdx = Math.min(closedIdx, next.length - 1);
+          setActiveTabId(next[newIdx].id);
+          saveConnection(next[newIdx].config);
+        } else {
+          setActiveTabId(null);
+          setShowNewConnection(true);
+          clearConnection();
         }
-      } catch (err) {
-        toast.error("Failed to load databases", {
-          description: err instanceof Error ? err.message : "Unknown error",
-        });
       }
-    };
-    load();
-  }, [connection, refreshKey]);
+      return next;
+    });
+  }, [activeTabId]);
 
-  const handleConnect = useCallback((config: ConnectionConfig, dbs: string[]) => {
-    setConnection(config);
-    setDatabases(dbs);
-    setSelectedTable(null);
-    setTables([]);
-    if (config.database) {
-      // Tables will load via the useEffect
+  const handleSwitchTab = useCallback((id: string) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (tab) {
+      saveConnection(tab.config);
+      setActiveTabId(id);
+      setShowNewConnection(false);
     }
+  }, [tabs]);
+
+  const handleNewTab = useCallback(() => {
+    setShowNewConnection(true);
+    setActiveTabId(null);
   }, []);
 
-  const handleDisconnect = useCallback(() => {
+  const handleDisconnectAll = useCallback(() => {
     clearConnection();
-    setConnection(null);
-    setDatabases([]);
-    setTables([]);
-    setSelectedTable(null);
+    setTabs([]);
+    setActiveTabId(null);
+    setShowNewConnection(true);
   }, []);
 
-  const handleDatabaseChange = useCallback(async (db: string) => {
-    try {
-      await switchDatabase(db);
-      setConnection((prev) => (prev ? { ...prev, database: db } : null));
-      setSelectedTable(null);
-      const tbls = await listTables();
-      setTables(tbls);
-    } catch (err) {
-      toast.error("Failed to switch database", {
-        description: err instanceof Error ? err.message : "Unknown error",
-      });
-    }
-  }, []);
-
-  const handleTableSelect = useCallback((table: string) => {
-    setSelectedTable(table);
-    setActiveTab("data");
-  }, []);
-
-  const handleRefresh = useCallback(() => {
-    setRefreshKey((k) => k + 1);
-  }, []);
-
-  const handleTableCreated = useCallback(() => {
-    handleRefresh();
-  }, [handleRefresh]);
-
-  const handleTableChanged = useCallback(() => {
-    setSelectedTable(null);
-    handleRefresh();
-  }, [handleRefresh]);
-
-  if (!connection) {
+  // No tabs open — show connection form full screen
+  if (tabs.length === 0 && showNewConnection) {
     return <ConnectionForm onConnect={handleConnect} />;
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <Sidebar
-        databases={databases}
-        currentDatabase={connection.database || ""}
-        tables={tables}
-        selectedTable={selectedTable}
-        onDatabaseChange={handleDatabaseChange}
-        onTableSelect={handleTableSelect}
-        onRefresh={handleRefresh}
-        onTableCreated={handleTableCreated}
-      />
+    <div className="flex flex-col h-screen bg-background">
+      {/* Connection tabs bar */}
+      <div className="h-10 bg-muted/50 border-b flex items-center shrink-0 overflow-hidden">
+        <div className="flex-1 flex items-center overflow-x-auto min-w-0">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={cn(
+                "group flex items-center gap-1.5 px-3 h-10 border-r text-sm cursor-pointer shrink-0 max-w-[200px] transition-colors",
+                activeTabId === tab.id && !showNewConnection
+                  ? "bg-background text-foreground border-b-2 border-b-primary"
+                  : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
+              )}
+              onClick={() => handleSwitchTab(tab.id)}
+            >
+              <Database className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{tab.name}</span>
+              <button
+                className="ml-auto shrink-0 rounded-sm p-0.5 opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCloseTab(tab.id);
+                }}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="h-14 border-b flex items-center justify-between px-4 shrink-0">
-          <div className="flex items-center gap-2">
-            <Database className="h-5 w-5 text-muted-foreground" />
-            <span className="font-semibold">{connection.database || "No database"}</span>
-            {selectedTable && (
-              <>
-                <span className="text-muted-foreground">/</span>
-                <span className="font-medium">{selectedTable}</span>
-              </>
+          {/* New connection tab */}
+          <button
+            className={cn(
+              "flex items-center gap-1.5 px-3 h-10 border-r text-sm cursor-pointer shrink-0 transition-colors",
+              showNewConnection
+                ? "bg-background text-foreground border-b-2 border-b-primary"
+                : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
             )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {connection.user}@{connection.host}:{connection.port}
-            </span>
-            <ThemeToggle />
-            <Button variant="ghost" size="icon-sm" onClick={handleDisconnect} title="Disconnect">
+            onClick={handleNewTab}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span>New Connection</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1 px-2 shrink-0">
+          <ThemeToggle />
+          {tabs.length > 0 && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleDisconnectAll}
+              title="Disconnect all"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
-          </div>
-        </header>
-
-        {/* Content */}
-        {selectedTable ? (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-              <div className="border-b px-4 flex items-center justify-between">
-                <TabsList className="h-10 bg-transparent p-0 gap-1">
-                  <TabsTrigger
-                    value="data"
-                    className="data-[state=active]:bg-muted rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary"
-                  >
-                    <Table2 className="h-4 w-4 mr-1.5" />
-                    Data
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="structure"
-                    className="data-[state=active]:bg-muted rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary"
-                  >
-                    <Columns3 className="h-4 w-4 mr-1.5" />
-                    Structure
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="sql"
-                    className="data-[state=active]:bg-muted rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary"
-                  >
-                    <Terminal className="h-4 w-4 mr-1.5" />
-                    Query
-                  </TabsTrigger>
-                </TabsList>
-                <TableToolbar
-                  table={selectedTable}
-                  onTableChanged={handleTableChanged}
-                  onRefresh={handleRefresh}
-                />
-              </div>
-
-              <TabsContent value="data" className="flex-1 mt-0 overflow-hidden">
-                <DataTable table={selectedTable} key={`${selectedTable}-${refreshKey}`} />
-              </TabsContent>
-              <TabsContent value="structure" className="flex-1 mt-0 overflow-auto p-4">
-                <StructureView
-                  table={selectedTable}
-                  key={`struct-${selectedTable}-${refreshKey}`}
-                  onRefresh={handleRefresh}
-                />
-              </TabsContent>
-              <TabsContent value="sql" className="flex-1 mt-0 overflow-hidden">
-                <SqlEditor defaultTable={selectedTable} />
-              </TabsContent>
-            </Tabs>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-              <div className="border-b px-4">
-                <TabsList className="h-10 bg-transparent p-0">
-                  <TabsTrigger
-                    value="sql"
-                    className="data-[state=active]:bg-muted rounded-b-none border-b-2 border-transparent data-[state=active]:border-primary"
-                  >
-                    <Terminal className="h-4 w-4 mr-1.5" />
-                    Query
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-              <TabsContent value="data" className="flex-1 mt-0" />
-              <TabsContent value="sql" className="flex-1 mt-0 overflow-hidden">
-                <SqlEditor />
-              </TabsContent>
-            </Tabs>
-            {activeTab !== "sql" && (
-              <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                <div className="text-center">
-                  <Database className="h-16 w-16 mx-auto mb-4 opacity-20" />
-                  <p className="text-lg font-medium">Select a table from the sidebar</p>
-                  <p className="text-sm mt-1">or open the Query tab to run SQL</p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
+
+      {/* Content */}
+      {showNewConnection ? (
+        <div className="flex-1 overflow-auto">
+          <ConnectionForm onConnect={handleConnect} hideThemeToggle />
+        </div>
+      ) : activeTab ? (
+        <ConnectionPanel key={activeTab.id} config={activeTab.config} />
+      ) : null}
     </div>
   );
 }
