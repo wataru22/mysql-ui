@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 
 type Theme = "light" | "dark" | "system";
 
@@ -11,6 +11,27 @@ function getSystemTheme(): "light" | "dark" {
 function applyTheme(theme: Theme) {
   const resolved = theme === "system" ? getSystemTheme() : theme;
   document.documentElement.classList.toggle("dark", resolved === "dark");
+}
+
+function subscribeDocumentDark(callback: () => void) {
+  const obs = new MutationObserver(callback);
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener("change", callback);
+  return () => {
+    obs.disconnect();
+    mq.removeEventListener("change", callback);
+  };
+}
+
+function snapshotDocumentDark() {
+  return document.documentElement.classList.contains("dark");
+}
+
+/** Matches the active UI theme via `<html class="dark">` (same source as `applyTheme`). */
+export function useResolvedTheme(): "light" | "dark" {
+  const dark = useSyncExternalStore(subscribeDocumentDark, snapshotDocumentDark, () => false);
+  return dark ? "dark" : "light";
 }
 
 export function useTheme() {

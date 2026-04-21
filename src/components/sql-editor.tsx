@@ -1,6 +1,12 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo, useCallback } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { sql, MySQL } from "@codemirror/lang-sql";
+import { oneDark } from "@codemirror/theme-one-dark";
+import type { Extension } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags as t } from "@lezer/highlight";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -12,23 +18,101 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { executeQuery } from "@/lib/api";
 import type { QueryResult } from "@/lib/types";
-import { Play, Loader2, Clock, RotateCcw, Copy } from "lucide-react";
+import { Play, Loader2, Clock, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { useResolvedTheme } from "@/hooks/use-theme";
+import { cn } from "@/lib/utils";
+
+const sqlLightTheme = EditorView.theme(
+  {
+    "&": {
+      fontSize: "0.875rem",
+      backgroundColor: "hsl(var(--background))",
+      color: "hsl(var(--foreground))",
+    },
+    ".cm-scroller": {
+      fontFamily:
+        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    },
+    ".cm-content": { caretColor: "hsl(var(--foreground))" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "hsl(var(--foreground))" },
+    "&.cm-focused .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground": {
+      background: "hsl(var(--accent) / 0.45)",
+    },
+    ".cm-gutters": {
+      backgroundColor: "hsl(var(--muted))",
+      color: "hsl(var(--muted-foreground))",
+      border: "none",
+    },
+    ".cm-activeLineGutter": { backgroundColor: "transparent" },
+    ".cm-activeLine": { backgroundColor: "hsl(var(--muted) / 0.35)" },
+  },
+  { dark: false }
+);
+
+const SQL_EDITOR_MIN_PX = 120;
+
+function maxSqlEditorHeightPx() {
+  return Math.min(Math.floor(window.innerHeight * 0.72), 560);
+}
+
+function clampSqlEditorHeight(view: EditorView) {
+  const cap = maxSqlEditorHeightPx();
+  const next = Math.max(SQL_EDITOR_MIN_PX, Math.min(view.contentHeight, cap));
+  view.dom.style.height = `${next}px`;
+}
+
+/** Grow with document height; cap so very long scripts scroll inside the editor. */
+function sqlEditorAutoHeight(): Extension[] {
+  return [
+    EditorView.theme({
+      "&": { height: "auto", minHeight: `${SQL_EDITOR_MIN_PX}px` },
+      ".cm-scroller": {
+        height: "100% !important",
+        overflowY: "auto",
+      },
+    }),
+    EditorView.updateListener.of((update) => {
+      if (update.geometryChanged || update.docChanged) {
+        queueMicrotask(() => clampSqlEditorHeight(update.view));
+      }
+    }),
+  ];
+}
+
+const sqlLightHighlight = syntaxHighlighting(
+  HighlightStyle.define([
+    { tag: t.keyword, color: "hsl(291 64% 42%)" },
+    { tag: t.operator, color: "hsl(221 83% 40%)" },
+    { tag: t.string, color: "hsl(161 94% 28%)" },
+    { tag: t.number, color: "hsl(24 95% 38%)" },
+    { tag: t.bool, color: "hsl(24 95% 38%)" },
+    { tag: t.null, color: "hsl(280 65% 45%)", fontStyle: "italic" },
+    { tag: t.comment, color: "hsl(var(--muted-foreground))", fontStyle: "italic" },
+    { tag: t.variableName, color: "hsl(222 47% 40%)" },
+    { tag: t.typeName, color: "hsl(262 83% 40%)" },
+    { tag: t.bracket, color: "hsl(var(--foreground))" },
+    { tag: t.punctuation, color: "hsl(var(--muted-foreground))" },
+  ])
+);
 
 interface Props {
   defaultTable?: string;
 }
 
 export function SqlEditor({ defaultTable }: Props) {
-  const [sql, setSql] = useState(defaultTable ? `SELECT * FROM \`${defaultTable}\` LIMIT 100;` : "");
+  const [sqlText, setSqlText] = useState(
+    defaultTable ? `SELECT * FROM \`${defaultTable}\` LIMIT 100;` : ""
+  );
   const [result, setResult] = useState<(QueryResult & { executionTime?: number }) | null>(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const resolvedTheme = useResolvedTheme();
+  const handleExecuteRef = useRef<() => void>(() => {});
 
-  const handleExecute = async () => {
-    const trimmedSql = sql.trim();
+  const handleExecute = useCallback(async () => {
+    const trimmedSql = sqlText.trim();
     if (!trimmedSql) return;
 
     setLoading(true);
@@ -36,7 +120,6 @@ export function SqlEditor({ defaultTable }: Props) {
       const data = await executeQuery(trimmedSql);
       setResult(data);
 
-      // Add to history (dedup)
       setHistory((prev) => {
         const filtered = prev.filter((h) => h !== trimmedSql);
         return [trimmedSql, ...filtered].slice(0, 50);
@@ -53,15 +136,29 @@ export function SqlEditor({ defaultTable }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sqlText]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Cmd/Ctrl + Enter to execute
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      handleExecute();
-    }
-  };
+  handleExecuteRef.current = handleExecute;
+
+  const extensions = useMemo(
+    () => [
+      sql({ dialect: MySQL, upperCaseKeywords: false }),
+      EditorView.contentAttributes.of({ spellcheck: "false" }),
+      keymap.of([
+        {
+          key: "Mod-Enter",
+          preventDefault: true,
+          run: () => {
+            void handleExecuteRef.current();
+            return true;
+          },
+        },
+      ]),
+      ...(resolvedTheme === "dark" ? [oneDark] : [sqlLightTheme, sqlLightHighlight]),
+      ...sqlEditorAutoHeight(),
+    ],
+    [resolvedTheme]
+  );
 
   const copyResults = () => {
     if (!result || result.rows.length === 0) return;
@@ -79,22 +176,34 @@ export function SqlEditor({ defaultTable }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* SQL input */}
       <div className="p-4 border-b shrink-0">
-        <div className="relative">
-          <Textarea
-            ref={textareaRef}
-            value={sql}
-            onChange={(e) => setSql(e.target.value)}
-            onKeyDown={handleKeyDown}
+        <div
+          className={cn(
+            "rounded-md border border-input bg-background ring-offset-background",
+            "focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
+            "overflow-hidden"
+          )}
+        >
+          <CodeMirror
+            value={sqlText}
+            theme="none"
+            className="text-sm [&_.cm-editor.cm-focused]:outline-none"
             placeholder="Enter SQL query... (Ctrl+Enter to execute)"
-            className="min-h-[120px] font-mono text-sm resize-y pr-4"
-            spellCheck={false}
+            extensions={extensions}
+            onChange={(v) => setSqlText(v)}
+            onCreateEditor={(view) => {
+              queueMicrotask(() => clampSqlEditorHeight(view));
+            }}
+            basicSetup={{
+              lineNumbers: true,
+              foldGutter: false,
+              highlightActiveLine: resolvedTheme === "dark",
+            }}
           />
         </div>
         <div className="flex items-center justify-between mt-2">
           <div className="flex gap-2">
-            <Button onClick={handleExecute} disabled={loading || !sql.trim()} size="sm">
+            <Button onClick={handleExecute} disabled={loading || !sqlText.trim()} size="sm">
               {loading ? (
                 <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
               ) : (
@@ -102,11 +211,7 @@ export function SqlEditor({ defaultTable }: Props) {
               )}
               Execute
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowHistory(!showHistory)}
-            >
+            <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)}>
               <Clock className="h-3.5 w-3.5 mr-1.5" />
               History ({history.length})
             </Button>
@@ -115,14 +220,13 @@ export function SqlEditor({ defaultTable }: Props) {
         </div>
       </div>
 
-      {/* History */}
       {showHistory && history.length > 0 && (
         <div className="border-b max-h-48 overflow-auto bg-muted/30">
           {history.map((h, i) => (
             <button
               key={i}
               onClick={() => {
-                setSql(h);
+                setSqlText(h);
                 setShowHistory(false);
               }}
               className="w-full text-left px-4 py-2 text-sm font-mono hover:bg-accent border-b last:border-0 truncate"
@@ -133,11 +237,9 @@ export function SqlEditor({ defaultTable }: Props) {
         </div>
       )}
 
-      {/* Results */}
       <div className="flex-1 overflow-auto">
         {result && (
           <>
-            {/* Results header */}
             <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/30 sticky top-0">
               <div className="flex items-center gap-3">
                 {result.rows.length > 0 && (
@@ -146,19 +248,13 @@ export function SqlEditor({ defaultTable }: Props) {
                   </span>
                 )}
                 {result.affectedRows !== undefined && (
-                  <Badge variant="secondary">
-                    {result.affectedRows} affected
-                  </Badge>
+                  <Badge variant="secondary">{result.affectedRows} affected</Badge>
                 )}
                 {result.insertId !== undefined && result.insertId > 0 && (
-                  <Badge variant="secondary">
-                    Insert ID: {result.insertId}
-                  </Badge>
+                  <Badge variant="secondary">Insert ID: {result.insertId}</Badge>
                 )}
                 {result.executionTime !== undefined && (
-                  <span className="text-xs text-muted-foreground">
-                    {result.executionTime}ms
-                  </span>
+                  <span className="text-xs text-muted-foreground">{result.executionTime}ms</span>
                 )}
               </div>
               {result.rows.length > 0 && (
@@ -169,7 +265,6 @@ export function SqlEditor({ defaultTable }: Props) {
               )}
             </div>
 
-            {/* Results table */}
             {result.rows.length > 0 && result.fields.length > 0 && (
               <Table>
                 <TableHeader>
@@ -201,7 +296,6 @@ export function SqlEditor({ defaultTable }: Props) {
               </Table>
             )}
 
-            {/* Message only (no rows) */}
             {result.rows.length === 0 && result.message && (
               <div className="p-8 text-center text-muted-foreground">
                 <p>{result.message}</p>

@@ -116,7 +116,7 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
       <div className="flex gap-6 w-full max-w-3xl items-start">
         {/* Saved connections */}
         {savedConnections.length > 0 && (
-          <Card className="w-72 shrink-0">
+          <Card className="w-80 max-w-[min(20rem,calc(100vw-2rem))] shrink-0">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Star className="h-4 w-4" />
@@ -129,15 +129,16 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
                   {savedConnections.map((conn) => (
                     <div
                       key={conn.id}
-                      className="group flex items-center gap-1 rounded-md border p-2 hover:bg-accent transition-colors"
+                      className="group flex items-start gap-1 rounded-md border p-2 hover:bg-accent transition-colors"
                     >
                       <button
-                        className="flex-1 text-left min-w-0"
+                        type="button"
+                        className="flex-1 min-w-0 text-left"
                         onClick={() => handleLoadSaved(conn)}
-                        title="Load into form"
+                        title={`${conn.name} — ${conn.user}@${conn.host}:${conn.port}${conn.database ? `/${conn.database}` : ""}`}
                       >
-                        <div className="text-sm font-medium truncate">{conn.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
+                        <div className="text-sm font-medium break-words">{conn.name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5 break-all">
                           {conn.user}@{conn.host}:{conn.port}
                           {conn.database ? `/${conn.database}` : ""}
                         </div>
