@@ -6,9 +6,14 @@ export interface ConnectionConfig {
   database?: string;
 }
 
-export interface SavedConnection extends ConnectionConfig {
+/** Bookmark only — password is never persisted; enter it when connecting. */
+export interface SavedConnection {
   id: string;
   name: string;
+  host: string;
+  port: number;
+  user: string;
+  database?: string;
 }
 
 export interface ConnectionTab {

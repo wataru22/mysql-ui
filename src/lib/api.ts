@@ -9,8 +9,26 @@ import type {
   FilterConfig,
 } from "./types";
 
+const DB_CONNECTION_KEY = "db_connection";
+
+/** Active credentials: tab-scoped (session), not disk-persisted like localStorage. */
+function migrateLegacyDbConnectionToSession(): void {
+  const legacy = localStorage.getItem(DB_CONNECTION_KEY);
+  if (!legacy) return;
+  try {
+    JSON.parse(legacy) as ConnectionConfig;
+    if (!sessionStorage.getItem(DB_CONNECTION_KEY)) {
+      sessionStorage.setItem(DB_CONNECTION_KEY, legacy);
+    }
+  } catch {
+    /* ignore corrupt legacy */
+  }
+  localStorage.removeItem(DB_CONNECTION_KEY);
+}
+
 function getStoredConnection(): ConnectionConfig | null {
-  const raw = localStorage.getItem("db_connection");
+  migrateLegacyDbConnectionToSession();
+  const raw = sessionStorage.getItem(DB_CONNECTION_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -59,7 +77,8 @@ export async function testConnection(config: ConnectionConfig): Promise<{ ok: bo
 }
 
 export function saveConnection(config: ConnectionConfig) {
-  localStorage.setItem("db_connection", JSON.stringify(config));
+  migrateLegacyDbConnectionToSession();
+  sessionStorage.setItem(DB_CONNECTION_KEY, JSON.stringify(config));
 }
 
 export function loadConnection(): ConnectionConfig | null {
@@ -67,17 +86,42 @@ export function loadConnection(): ConnectionConfig | null {
 }
 
 export function clearConnection() {
-  localStorage.removeItem("db_connection");
+  localStorage.removeItem(DB_CONNECTION_KEY);
+  sessionStorage.removeItem(DB_CONNECTION_KEY);
 }
 
 // Saved connections
 const SAVED_CONNECTIONS_KEY = "db_saved_connections";
 
+function normalizeSavedEntry(item: unknown): SavedConnection | null {
+  if (!item || typeof item !== "object") return null;
+  const o = item as Record<string, unknown>;
+  if (typeof o.id !== "string" || typeof o.name !== "string") return null;
+  const host = typeof o.host === "string" ? o.host : "";
+  const port = typeof o.port === "number" && Number.isFinite(o.port) ? o.port : 3306;
+  const user = typeof o.user === "string" ? o.user : "";
+  const database =
+    typeof o.database === "string" && o.database.length > 0 ? o.database : undefined;
+  return { id: o.id, name: o.name, host, port, user, database };
+}
+
 export function getSavedConnections(): SavedConnection[] {
   const raw = localStorage.getItem(SAVED_CONNECTIONS_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const list: SavedConnection[] = [];
+    let needsRewrite = false;
+    for (const item of parsed) {
+      if (item && typeof item === "object" && "password" in item) needsRewrite = true;
+      const n = normalizeSavedEntry(item);
+      if (n) list.push(n);
+    }
+    if (needsRewrite) {
+      localStorage.setItem(SAVED_CONNECTIONS_KEY, JSON.stringify(list));
+    }
+    return list;
   } catch {
     return [];
   }
@@ -86,10 +130,18 @@ export function getSavedConnections(): SavedConnection[] {
 export function saveNamedConnection(conn: SavedConnection): void {
   const existing = getSavedConnections();
   const idx = existing.findIndex((c) => c.id === conn.id);
+  const safe: SavedConnection = {
+    id: conn.id,
+    name: conn.name,
+    host: conn.host,
+    port: conn.port,
+    user: conn.user,
+    database: conn.database,
+  };
   if (idx >= 0) {
-    existing[idx] = conn;
+    existing[idx] = safe;
   } else {
-    existing.push(conn);
+    existing.push(safe);
   }
   localStorage.setItem(SAVED_CONNECTIONS_KEY, JSON.stringify(existing));
 }

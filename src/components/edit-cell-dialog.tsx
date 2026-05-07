@@ -14,6 +14,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
 
+function cellValueToEditableString(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -27,7 +40,7 @@ export function EditCellDialog({ open, onOpenChange, row, column, columns, onSav
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {};
     for (const col of columns) {
-      v[col] = row[col] === null ? "" : String(row[col]);
+      v[col] = cellValueToEditableString(row[col]);
     }
     return v;
   });
@@ -41,7 +54,7 @@ export function EditCellDialog({ open, onOpenChange, row, column, columns, onSav
         // Save all changed fields
         const changes: Record<string, unknown> = {};
         for (const col of columns) {
-          const originalValue = row[col] === null ? "" : String(row[col]);
+          const originalValue = cellValueToEditableString(row[col]);
           if (values[col] !== originalValue) {
             changes[col] = values[col] || null;
           }
@@ -61,7 +74,7 @@ export function EditCellDialog({ open, onOpenChange, row, column, columns, onSav
     }
   };
 
-  const currentValue = row[column] === null ? "" : String(row[column]);
+  const currentValue = cellValueToEditableString(row[column]);
   const isLongValue = currentValue.length > 100;
 
   return (

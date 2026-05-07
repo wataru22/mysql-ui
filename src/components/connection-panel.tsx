@@ -22,7 +22,7 @@ export function ConnectionPanel({ config }: Props) {
   const [activeTab, setActiveTab] = useState("data");
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Activate this panel's connection in localStorage whenever it mounts or config changes
+  // Keep session-scoped credentials in sync for API calls (see sessionStorage in api.ts)
   useEffect(() => {
     saveConnection(config);
   }, [config]);
@@ -51,7 +51,7 @@ export function ConnectionPanel({ config }: Props) {
   const handleDatabaseChange = useCallback(async (db: string) => {
     try {
       await switchDatabase(db);
-      // Update localStorage with the new database for this connection
+      // Persist selected database in the active session connection
       saveConnection({ ...config, database: db });
       setCurrentDatabase(db);
       setSelectedTable(null);

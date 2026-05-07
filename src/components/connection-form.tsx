@@ -8,6 +8,14 @@ import type { ConnectionConfig, SavedConnection } from "@/lib/types";
 import { Database, Loader2, Star, Trash2, Plug } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 interface Props {
@@ -20,6 +28,8 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [saveName, setSaveName] = useState("");
   const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [quickConnectTarget, setQuickConnectTarget] = useState<SavedConnection | null>(null);
+  const [quickConnectPassword, setQuickConnectPassword] = useState("");
   const [form, setForm] = useState<ConnectionConfig>({
     host: "localhost",
     port: 3306,
@@ -53,9 +63,12 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
   const handleSaveConnection = () => {
     const name = saveName.trim() || `${form.user}@${form.host}:${form.port}`;
     const conn: SavedConnection = {
-      ...form,
       id: crypto.randomUUID(),
       name,
+      host: form.host,
+      port: form.port,
+      user: form.user,
+      database: form.database || undefined,
     };
     saveNamedConnection(conn);
     setSavedConnections(getSavedConnections());
@@ -69,20 +82,22 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
     toast.success(`Deleted "${name}"`);
   };
 
-  const handleQuickConnect = async (conn: SavedConnection) => {
+  const runQuickConnect = async (conn: SavedConnection, password: string) => {
     setConnectingId(conn.id);
     try {
       const config: ConnectionConfig = {
         host: conn.host,
         port: conn.port,
         user: conn.user,
-        password: conn.password,
+        password,
         database: conn.database,
       };
       const result = await testConnection(config);
       saveConnection(config);
       toast.success(`Connected to ${conn.name}`);
       onConnect(config, result.databases);
+      setQuickConnectTarget(null);
+      setQuickConnectPassword("");
     } catch (err) {
       toast.error(`Failed to connect to ${conn.name}`, {
         description: err instanceof Error ? err.message : "Unknown error",
@@ -97,8 +112,8 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
       host: conn.host,
       port: conn.port,
       user: conn.user,
-      password: conn.password,
-      database: conn.database,
+      password: "",
+      database: conn.database ?? "",
     });
   };
 
@@ -146,7 +161,10 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleQuickConnect(conn)}
+                        onClick={() => {
+                          setQuickConnectTarget(conn);
+                          setQuickConnectPassword("");
+                        }}
                         disabled={connectingId === conn.id}
                         title="Quick connect"
                         className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
@@ -221,6 +239,7 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   value={form.password}
                   onChange={(e) => update("password", e.target.value)}
                   placeholder="Enter password"
@@ -272,6 +291,60 @@ export function ConnectionForm({ onConnect, hideThemeToggle }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog
+        open={quickConnectTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setQuickConnectTarget(null);
+            setQuickConnectPassword("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Password for {quickConnectTarget?.name}</DialogTitle>
+            <DialogDescription>
+              Saved connections store host and user only. Enter the database password to connect.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            autoComplete="current-password"
+            value={quickConnectPassword}
+            onChange={(e) => setQuickConnectPassword(e.target.value)}
+            placeholder="Password"
+            className="mt-2"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && quickConnectTarget && quickConnectPassword) {
+                e.preventDefault();
+                void runQuickConnect(quickConnectTarget, quickConnectPassword);
+              }
+            }}
+          />
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setQuickConnectTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!quickConnectTarget || !quickConnectPassword.trim() || connectingId !== null}
+              onClick={() =>
+                quickConnectTarget && runQuickConnect(quickConnectTarget, quickConnectPassword)
+              }
+            >
+              {connectingId ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Connecting…
+                </>
+              ) : (
+                "Connect"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
