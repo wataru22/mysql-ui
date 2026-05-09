@@ -37,6 +37,7 @@ import {
   Copy,
   RefreshCw,
   Download,
+  FilterX,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,9 +45,18 @@ interface Props {
   table: string;
   onTableChanged: () => void;
   onRefresh: () => void;
+  /** When set, shows a control to clear the data grid search and column filters (Data tab). */
+  onClearSearchFilters?: () => void;
+  clearSearchFiltersDisabled?: boolean;
 }
 
-export function TableToolbar({ table, onTableChanged, onRefresh }: Props) {
+export function TableToolbar({
+  table,
+  onTableChanged,
+  onRefresh,
+  onClearSearchFilters,
+  clearSearchFiltersDisabled,
+}: Props) {
   const [dropOpen, setDropOpen] = useState(false);
   const [truncateOpen, setTruncateOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -114,6 +124,19 @@ export function TableToolbar({ table, onTableChanged, onRefresh }: Props) {
         <Button variant="ghost" size="icon-sm" onClick={onRefresh} title="Refresh">
           <RefreshCw className="h-3.5 w-3.5" />
         </Button>
+        {onClearSearchFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            disabled={clearSearchFiltersDisabled}
+            onClick={onClearSearchFilters}
+            title="Clear search and filters"
+          >
+            <FilterX className="h-3.5 w-3.5 mr-1" />
+            Clear filters
+          </Button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon-sm">

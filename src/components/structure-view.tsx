@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import {
   Table,
   TableBody,
@@ -28,12 +28,19 @@ import { AddColumnDialog } from "@/components/add-column-dialog";
 import { ModifyColumnDialog } from "@/components/modify-column-dialog";
 import { Separator } from "@/components/ui/separator";
 
+export interface StructureViewHandle {
+  refresh: () => void;
+}
+
 interface Props {
   table: string;
   onRefresh: () => void;
 }
 
-export function StructureView({ table, onRefresh }: Props) {
+export const StructureView = forwardRef<StructureViewHandle, Props>(function StructureView(
+  { table, onRefresh },
+  ref
+) {
   const [columns, setColumns] = useState<TableColumn[]>([]);
   const [indexes, setIndexes] = useState<TableIndex[]>([]);
   const [createSql, setCreateSql] = useState("");
@@ -43,7 +50,7 @@ export function StructureView({ table, onRefresh }: Props) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [showSql, setShowSql] = useState(false);
 
-  const fetchStructure = async () => {
+  const fetchStructure = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getTableStructure(table);
@@ -57,11 +64,21 @@ export function StructureView({ table, onRefresh }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [table]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      refresh: () => {
+        void fetchStructure();
+      },
+    }),
+    [fetchStructure]
+  );
 
   useEffect(() => {
-    fetchStructure();
-  }, [table]);
+    void fetchStructure();
+  }, [fetchStructure]);
 
   const handleDropColumn = async () => {
     if (!dropTarget) return;
@@ -273,4 +290,4 @@ export function StructureView({ table, onRefresh }: Props) {
       </AlertDialog>
     </div>
   );
-}
+});

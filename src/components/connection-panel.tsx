@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { ConnectionConfig } from "@/lib/types";
 import { saveConnection, listDatabases, switchDatabase, listTables } from "@/lib/api";
 import { Sidebar } from "@/components/sidebar";
-import { DataTable } from "@/components/data-table";
-import { StructureView } from "@/components/structure-view";
+import { DataTable, type DataTableHandle } from "@/components/data-table";
+import { StructureView, type StructureViewHandle } from "@/components/structure-view";
 import { SqlEditor } from "@/components/sql-editor";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TableToolbar } from "@/components/table-toolbar";
@@ -21,6 +21,9 @@ export function ConnectionPanel({ config }: Props) {
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("data");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [dataConstraintsActive, setDataConstraintsActive] = useState(false);
+  const dataTableRef = useRef<DataTableHandle>(null);
+  const structureViewRef = useRef<StructureViewHandle>(null);
 
   // Keep session-scoped credentials in sync for API calls (see sessionStorage in api.ts)
   useEffect(() => {
@@ -73,6 +76,14 @@ export function ConnectionPanel({ config }: Props) {
     // Re-activate this connection before refresh
     saveConnection({ ...config, database: currentDatabase });
     setRefreshKey((k) => k + 1);
+    dataTableRef.current?.refresh();
+    structureViewRef.current?.refresh();
+  }, [config, currentDatabase]);
+
+  const handleTableToolbarRefresh = useCallback(() => {
+    saveConnection({ ...config, database: currentDatabase });
+    dataTableRef.current?.refresh();
+    structureViewRef.current?.refresh();
   }, [config, currentDatabase]);
 
   const handleTableCreated = useCallback(() => {
@@ -148,17 +159,27 @@ export function ConnectionPanel({ config }: Props) {
                 <TableToolbar
                   table={selectedTable}
                   onTableChanged={handleTableChanged}
-                  onRefresh={handleRefresh}
+                  onRefresh={handleTableToolbarRefresh}
+                  onClearSearchFilters={
+                    activeTab === "data"
+                      ? () => dataTableRef.current?.clearSearchAndFilters()
+                      : undefined
+                  }
+                  clearSearchFiltersDisabled={!dataConstraintsActive}
                 />
               </div>
 
               <TabsContent value="data" className="flex-1 mt-0 overflow-hidden">
-                <DataTable table={selectedTable} key={`${selectedTable}-${refreshKey}`} />
+                <DataTable
+                  ref={dataTableRef}
+                  table={selectedTable}
+                  onConstraintsActiveChange={setDataConstraintsActive}
+                />
               </TabsContent>
               <TabsContent value="structure" className="flex-1 mt-0 overflow-auto p-4">
                 <StructureView
+                  ref={structureViewRef}
                   table={selectedTable}
-                  key={`struct-${selectedTable}-${refreshKey}`}
                   onRefresh={handleRefresh}
                 />
               </TabsContent>

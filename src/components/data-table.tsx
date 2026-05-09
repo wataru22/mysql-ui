@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import {
   Table,
   TableBody,
@@ -45,18 +45,27 @@ import {
   Plus,
   Filter,
   X,
-  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AddRowDialog } from "@/components/add-row-dialog";
 import { EditCellDialog } from "@/components/edit-cell-dialog";
 import { FilterDialog } from "@/components/filter-dialog";
 
-interface Props {
-  table: string;
+export interface DataTableHandle {
+  refresh: () => void;
+  clearSearchAndFilters: () => void;
 }
 
-export function DataTable({ table }: Props) {
+interface Props {
+  table: string;
+  /** When true, notifies parent whether search/filter UI has active constraints (for toolbar affordances). */
+  onConstraintsActiveChange?: (active: boolean) => void;
+}
+
+export const DataTable = forwardRef<DataTableHandle, Props>(function DataTable(
+  { table, onConstraintsActiveChange },
+  ref
+) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [structure, setStructure] = useState<TableColumn[]>([]);
@@ -91,6 +100,27 @@ export function DataTable({ table }: Props) {
       setLoading(false);
     }
   }, [table, page, pageSize, sort, filters, search]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      refresh: () => {
+        void fetchData();
+      },
+      clearSearchAndFilters: () => {
+        setSearchInput("");
+        setSearch("");
+        setFilters([]);
+        setPage(1);
+      },
+    }),
+    [fetchData]
+  );
+
+  useEffect(() => {
+    const active = filters.length > 0 || !!search.trim() || searchInput.trim().length > 0;
+    onConstraintsActiveChange?.(active);
+  }, [filters.length, search, searchInput, onConstraintsActiveChange]);
 
   const fetchStructure = useCallback(async () => {
     try {
@@ -459,4 +489,4 @@ export function DataTable({ table }: Props) {
       />
     </div>
   );
-}
+});
