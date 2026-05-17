@@ -37,6 +37,9 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
+  "overrides": {
+    "next-mdx-remote": "^6.0.0"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
