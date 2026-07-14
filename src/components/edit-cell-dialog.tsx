@@ -13,6 +13,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+
+function tryPrettifyJson(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return null;
+  }
+}
 
 function cellValueToEditableString(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -46,6 +59,7 @@ export function EditCellDialog({ open, onOpenChange, row, column, columns, onSav
   });
   const [loading, setLoading] = useState(false);
   const [editAll, setEditAll] = useState(false);
+  const [prettyView, setPrettyView] = useState(false);
 
   const handleSave = async () => {
     setLoading(true);
@@ -77,8 +91,28 @@ export function EditCellDialog({ open, onOpenChange, row, column, columns, onSav
   const currentValue = cellValueToEditableString(row[column]);
   const isLongValue = currentValue.length > 100;
 
+  const handlePrettify = (col: string) => {
+    if (prettyView) {
+      setPrettyView(false);
+      return;
+    }
+    if (tryPrettifyJson(values[col]) === null) {
+      toast.error("Not valid JSON", {
+        description: "This value could not be parsed as a JSON object or array.",
+      });
+      return;
+    }
+    setPrettyView(true);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setPrettyView(false);
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="max-w-lg max-h-[80vh]">
         <DialogHeader>
           <DialogTitle>Edit {editAll ? "row" : `"${column}"`}</DialogTitle>
@@ -107,25 +141,50 @@ export function EditCellDialog({ open, onOpenChange, row, column, columns, onSav
           </ScrollArea>
         ) : (
           <div className="space-y-2">
-            <Label className="font-mono text-xs">{column}</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="font-mono text-xs">{column}</Label>
+              {tryPrettifyJson(values[column]) !== null && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => handlePrettify(column)}
+                >
+                  {prettyView ? "Edit" : "Prettify"}
+                </Button>
+              )}
+            </div>
             {isLongValue ? (
               <Textarea
-                value={values[column]}
-                onChange={(e) =>
-                  setValues((prev) => ({ ...prev, [column]: e.target.value }))
+                value={
+                  prettyView
+                    ? (tryPrettifyJson(values[column]) ?? values[column])
+                    : values[column]
                 }
+                readOnly={prettyView}
+                onChange={(e) => {
+                  setPrettyView(false);
+                  setValues((prev) => ({ ...prev, [column]: e.target.value }));
+                }}
                 className="font-mono text-sm min-h-[120px]"
                 placeholder="NULL"
               />
             ) : (
               <Input
-                value={values[column]}
-                onChange={(e) =>
-                  setValues((prev) => ({ ...prev, [column]: e.target.value }))
+                value={
+                  prettyView
+                    ? (tryPrettifyJson(values[column]) ?? values[column])
+                    : values[column]
                 }
+                readOnly={prettyView}
+                onChange={(e) => {
+                  setPrettyView(false);
+                  setValues((prev) => ({ ...prev, [column]: e.target.value }));
+                }}
                 className="font-mono text-sm"
                 placeholder="NULL"
-                autoFocus
+                autoFocus={!prettyView}
               />
             )}
           </div>
