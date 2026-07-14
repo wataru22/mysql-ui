@@ -1,84 +1,80 @@
 # MySQL Admin (mysql-ui)
 
-A browser-based MySQL client: connect to servers, browse databases and tables, run SQL, and import/export dumps. The UI is a React app with an IDE-style SQL editor (syntax highlighting, line numbers, dark mode). The backend uses **mysql2** and exposes REST-style handlers under `/api`.
+A MySQL client with a React UI and mysql2 API. Available as a **web app** (`web/`) and an **Electron desktop app** (`app/`).
+
+## Layout
+
+| Path | Role |
+| ---- | ---- |
+| `web/` | Vite + React UI, Bun API (`server.ts` + `api/*`), Vercel deploy |
+| `app/` | Electron shell — spawns the web API and loads the UI |
 
 ## Features
 
-- **Connections** — Quick connect or save bookmarks (host, port, user, optional database, display name). Passwords are **not** stored in saved bookmarks; the active session keeps credentials in **session storage** so they clear with the tab/session.
+- **Connections** — Quick connect or save bookmarks (host, port, user, optional database, display name). Passwords are **not** stored in saved bookmarks; the active session keeps credentials in **session storage**.
 - **Multi-tab sessions** — Work with several connections in parallel from one window.
-- **Schema exploration** — Browse databases, table structure, and row data in a data grid.
-- **SQL editor** — Run arbitrary statements against the active database.
-- **Import & export** — SQL dump workflows tuned for MySQL (including JSON columns and identifier normalization for portable dumps).
-
-## Stack
-
-| Layer    | Technology                                      |
-| --------- | ----------------------------------------------- |
-| UI        | React 19, Vite, TypeScript, Tailwind, Radix UI |
-| SQL editor| CodeMirror (`@codemirror/lang-sql`)            |
-| Local API | Bun (`server.ts`, port **3001** by default)    |
-| Database  | mysql2                                          |
-| Deploy    | Static build + Vercel serverless `api/*.ts`    |
+- **Schema exploration** — Browse databases, table structure, and row data.
+- **SQL editor** — Run statements against the active database.
+- **Import & export** — SQL dump workflows tuned for MySQL.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (package manager and runtime for the dev API server)
-- A reachable MySQL or MariaDB server to connect to from your machine (local dev) or from your deployment (production)
+- [Bun](https://bun.sh)
+- A reachable MySQL or MariaDB server
+- Electron app also needs Bun on `PATH` at runtime (API sidecar)
 
-## Local development
+## Install
 
-Install dependencies:
+From the repo root:
 
 ```bash
 bun install
 ```
 
-Run the Vite dev server and the API server together (API on `3001`, UI proxies `/api` to it):
+## Web (browser)
 
 ```bash
-bun run dev
+bun run dev          # API :3001 + Vite :5173
+bun run build        # production client → web/dist
 ```
 
-Alternatively, run them in separate terminals:
+Or from `web/`:
 
 ```bash
-bun run dev:server   # Bun API on :3001
-bun run dev:client  # Vite on the default port (check terminal output)
+cd web && bun run dev
 ```
 
-Override the API port if needed:
+## Electron
+
+Dev (starts Vite client + Electron; Electron starts the API on port 3001):
 
 ```bash
-PORT=4001 bun run dev:server
+bun run dev:app
 ```
 
-Production build:
+Production-style local run (build UI, then Electron serves static + API):
 
 ```bash
-bun run build
-bun run preview   # optional: preview the static client
+bun run build:app
+bun run start:app
 ```
 
-## Project layout
+Package installers:
 
-```
-api/           # Server handlers (Vercel-style exports; also loaded by Bun server.ts)
-src/           # React application
-server.ts      # Local Bun server that loads api/*.ts and serves /api/*
-vercel.json    # Vercel install/build and SPA + API rewrites
+```bash
+bun run dist:app
 ```
 
-## Deploying (Vercel)
+## Deploy (web)
 
-The repo includes `vercel.json` with Bun install/build and rewrites so `/api/*` hits the serverless functions in `api/` and everything else serves the Vite SPA.
+Vercel root directory should be `web/`. See `web/vercel.json`.
 
-**Important:** Your deployment must be able to reach the MySQL hosts users connect to (network, firewall, and MySQL user `HOST` permissions). The app does not bundle a database; it connects to whatever server the user specifies.
+## Stack
 
-## Security notes
-
-- Treat this like any tool that can execute SQL: only use it on servers and accounts you trust, and avoid exposing the hosted UI to the public internet without authentication unless that matches your threat model.
-- Saved connection bookmarks intentionally omit passwords; you re-enter the password when connecting.
-
-## License
-
-This project is private (`"private": true` in `package.json`). Add a `LICENSE` file if you publish it publicly.
+| Layer | Technology |
+| ----- | ---------- |
+| UI | React 19, Vite, TypeScript, Tailwind, Radix UI |
+| SQL editor | CodeMirror (`@codemirror/lang-sql`) |
+| API | Bun (`web/server.ts`) + mysql2 |
+| Desktop | Electron (`app/`) |
+| Deploy | Static build + Vercel serverless `web/api/*.ts` |

@@ -1,16 +1,32 @@
 /**
- * Local development API server.
+ * Local development / Electron API server.
  * Run with: bun run server.ts
  *
- * This serves the /api/* routes locally so you can develop
- * without Vercel. The Vite dev server proxies /api to this.
+ * Serves /api/* routes. When SERVE_STATIC=1, also serves the Vite build from dist/.
  */
 import { serve } from 'bun'
 import { readdir } from 'fs/promises'
-import { join } from 'path'
+import { join, extname } from 'path'
 
 const API_DIR = join(import.meta.dir, 'api')
+const DIST_DIR = join(import.meta.dir, 'dist')
 const PORT = Number(process.env.PORT) || 3001
+const SERVE_STATIC = process.env.SERVE_STATIC === '1' || process.env.SERVE_STATIC === 'true'
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+}
 
 // Pre-load all API route handlers
 const routes: Record<string, (req: Request) => Promise<Response>> = {}
@@ -40,7 +56,6 @@ function adaptHandler(handler: Function) {
       }
     }
 
-    // Create a mock VercelRequest/VercelResponse
     const headers: Record<string, string | string[]> = {}
     req.headers.forEach((value, key) => {
       headers[key] = value
@@ -89,6 +104,25 @@ function adaptHandler(handler: Function) {
   }
 }
 
+async function serveStatic(pathname: string): Promise<Response | null> {
+  const safePath = pathname === '/' ? '/index.html' : pathname
+  const filePath = join(DIST_DIR, safePath)
+  if (!filePath.startsWith(DIST_DIR)) return null
+
+  let file = Bun.file(filePath)
+  if (!(await file.exists())) {
+    // SPA fallback
+    file = Bun.file(join(DIST_DIR, 'index.html'))
+    if (!(await file.exists())) return null
+    return new Response(file, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
+  }
+
+  const type = MIME[extname(filePath)] || 'application/octet-stream'
+  return new Response(file, { headers: { 'Content-Type': type } })
+}
+
 await loadRoutes()
 
 serve({
@@ -96,7 +130,6 @@ serve({
   async fetch(req) {
     const url = new URL(req.url)
 
-    // Handle CORS preflight
     if (req.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
@@ -108,7 +141,6 @@ serve({
       })
     }
 
-    // Match API routes
     const match = url.pathname.match(/^\/api\/(.+)$/)
     if (match) {
       const routeName = match[1]
@@ -130,6 +162,15 @@ serve({
           )
         }
       }
+      return new Response(JSON.stringify({ error: 'Not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (SERVE_STATIC) {
+      const staticRes = await serveStatic(url.pathname)
+      if (staticRes) return staticRes
     }
 
     return new Response(JSON.stringify({ error: 'Not found' }), {
@@ -139,4 +180,7 @@ serve({
   },
 })
 
-console.log(`API server running on http://localhost:${PORT}`)
+console.log(
+  `API server running on http://localhost:${PORT}` +
+    (SERVE_STATIC ? ' (serving static from dist/)' : ''),
+)

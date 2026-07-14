@@ -1,0 +1,56 @@
+{
+  "name": "@mysql-ui/app",
+  "private": true,
+  "version": "0.1.0",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "NODE_ENV=development ELECTRON_RUN_AS_NODE= electron .",
+    "build": "bun run --cwd ../web build",
+    "start": "NODE_ENV=production ELECTRON_RUN_AS_NODE= electron .",
+    "pack": "bun run build && electron-builder --dir",
+    "dist": "bun run build && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^35.1.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.mysql-ui.app",
+    "productName": "MySQL UI",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web/dist"
+      },
+      {
+        "from": "../web/api",
+        "to": "web/api"
+      },
+      {
+        "from": "../web/server.ts",
+        "to": "web/server.ts"
+      },
+      {
+        "from": "../web/package.json",
+        "to": "web/package.json"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"]
+    },
+    "linux": {
+      "target": ["AppImage"]
+    },
+    "win": {
+      "target": ["nsis"]
+    }
+  }
+}
