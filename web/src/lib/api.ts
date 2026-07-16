@@ -65,7 +65,9 @@ async function apiCall<T>(
 }
 
 // Connection
-export async function testConnection(config: ConnectionConfig): Promise<{ ok: boolean; databases: string[] }> {
+export async function testConnection(
+  config: ConnectionConfig
+): Promise<{ ok: boolean; databases: string[]; tunnelId?: string; localPort?: number }> {
   const res = await fetch("/api/connect", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -74,6 +76,31 @@ export async function testConnection(config: ConnectionConfig): Promise<{ ok: bo
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Connection failed");
   return data;
+}
+
+/** Apply tunnel assignment from connect response onto the config used for subsequent API calls. */
+export function withTunnelAssignment(
+  config: ConnectionConfig,
+  result: { tunnelId?: string; localPort?: number }
+): ConnectionConfig {
+  if (!config.ssh?.enabled || !result.tunnelId || !result.localPort) return config;
+  return {
+    ...config,
+    ssh: {
+      ...config.ssh,
+      tunnelId: result.tunnelId,
+      localPort: result.localPort,
+    },
+  };
+}
+
+export async function stopSshTunnel(tunnelId: string): Promise<void> {
+  if (!tunnelId) return;
+  try {
+    await fetch(`/api/tunnel?id=${encodeURIComponent(tunnelId)}`, { method: "DELETE" });
+  } catch {
+    /* best-effort */
+  }
 }
 
 export function saveConnection(config: ConnectionConfig) {
@@ -93,6 +120,22 @@ export function clearConnection() {
 // Saved connections
 const SAVED_CONNECTIONS_KEY = "db_saved_connections";
 
+function normalizeSavedSsh(raw: unknown): SavedConnection["ssh"] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const s = raw as Record<string, unknown>;
+  if (s.enabled !== true) return undefined;
+  const host = typeof s.host === "string" ? s.host : "";
+  const user = typeof s.user === "string" ? s.user : "";
+  if (!host || !user) return undefined;
+  const port = typeof s.port === "number" && Number.isFinite(s.port) ? s.port : 22;
+  const keyPath = typeof s.keyPath === "string" && s.keyPath.length > 0 ? s.keyPath : undefined;
+  const localPort =
+    typeof s.localPort === "number" && Number.isFinite(s.localPort) && s.localPort > 0
+      ? s.localPort
+      : undefined;
+  return { enabled: true, host, port, user, keyPath, localPort };
+}
+
 function normalizeSavedEntry(item: unknown): SavedConnection | null {
   if (!item || typeof item !== "object") return null;
   const o = item as Record<string, unknown>;
@@ -102,7 +145,8 @@ function normalizeSavedEntry(item: unknown): SavedConnection | null {
   const user = typeof o.user === "string" ? o.user : "";
   const database =
     typeof o.database === "string" && o.database.length > 0 ? o.database : undefined;
-  return { id: o.id, name: o.name, host, port, user, database };
+  const ssh = normalizeSavedSsh(o.ssh);
+  return { id: o.id, name: o.name, host, port, user, database, ...(ssh ? { ssh } : {}) };
 }
 
 export function getSavedConnections(): SavedConnection[] {
@@ -114,7 +158,17 @@ export function getSavedConnections(): SavedConnection[] {
     const list: SavedConnection[] = [];
     let needsRewrite = false;
     for (const item of parsed) {
-      if (item && typeof item === "object" && "password" in item) needsRewrite = true;
+      if (item && typeof item === "object") {
+        const o = item as Record<string, unknown>;
+        if ("password" in o) needsRewrite = true;
+        if (
+          o.ssh &&
+          typeof o.ssh === "object" &&
+          ("password" in (o.ssh as object) || "tunnelId" in (o.ssh as object))
+        ) {
+          needsRewrite = true;
+        }
+      }
       const n = normalizeSavedEntry(item);
       if (n) list.push(n);
     }
@@ -130,6 +184,18 @@ export function getSavedConnections(): SavedConnection[] {
 export function saveNamedConnection(conn: SavedConnection): void {
   const existing = getSavedConnections();
   const idx = existing.findIndex((c) => c.id === conn.id);
+  const ssh = conn.ssh?.enabled
+    ? {
+        enabled: true as const,
+        host: conn.ssh.host,
+        port: conn.ssh.port || 22,
+        user: conn.ssh.user,
+        ...(conn.ssh.keyPath ? { keyPath: conn.ssh.keyPath } : {}),
+        ...(conn.ssh.localPort && conn.ssh.localPort > 0
+          ? { localPort: conn.ssh.localPort }
+          : {}),
+      }
+    : undefined;
   const safe: SavedConnection = {
     id: conn.id,
     name: conn.name,
@@ -137,6 +203,7 @@ export function saveNamedConnection(conn: SavedConnection): void {
     port: conn.port,
     user: conn.user,
     database: conn.database,
+    ...(ssh ? { ssh } : {}),
   };
   if (idx >= 0) {
     existing[idx] = safe;

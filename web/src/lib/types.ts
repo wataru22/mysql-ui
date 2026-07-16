@@ -1,12 +1,29 @@
+/** SSH local forward (ssh -L). Passwords/keys are session-only when present. */
+export interface SshTunnelConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  user: string;
+  /** Session-only; never persist in saved bookmarks */
+  password?: string;
+  /** Optional path to private key (IdentityFile) */
+  keyPath?: string;
+  /** Preferred local bind port; 0 / omitted = auto-assign */
+  localPort?: number;
+  /** Assigned by API after tunnel starts */
+  tunnelId?: string;
+}
+
 export interface ConnectionConfig {
   host: string;
   port: number;
   user: string;
   password: string;
   database?: string;
+  ssh?: SshTunnelConfig;
 }
 
-/** Bookmark only — password is never persisted; enter it when connecting. */
+/** Bookmark only — DB/SSH passwords are never persisted; enter them when connecting. */
 export interface SavedConnection {
   id: string;
   name: string;
@@ -14,6 +31,7 @@ export interface SavedConnection {
   port: number;
   user: string;
   database?: string;
+  ssh?: Omit<SshTunnelConfig, "password" | "tunnelId">;
 }
 
 export interface ConnectionTab {

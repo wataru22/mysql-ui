@@ -123,8 +123,18 @@ export function ConnectionPanel({ config }: Props) {
               </>
             )}
           </div>
-          <span className="text-xs text-muted-foreground">
+          <span
+            className="text-xs text-muted-foreground text-right max-w-[min(28rem,50vw)] break-all"
+            title={
+              config.ssh?.enabled
+                ? `${config.user}@${config.host}:${config.port} via SSH ${config.ssh.user}@${config.ssh.host}:${config.ssh.port || 22} (localhost:${config.ssh.localPort})`
+                : `${config.user}@${config.host}:${config.port}`
+            }
+          >
             {config.user}@{config.host}:{config.port}
+            {config.ssh?.enabled && config.ssh.localPort
+              ? ` · SSH → localhost:${config.ssh.localPort}`
+              : ""}
           </span>
         </header>
 

@@ -1,12 +1,21 @@
 import { useState, useCallback } from "react";
 import type { ConnectionConfig, ConnectionTab } from "@/lib/types";
-import { saveConnection, clearConnection } from "@/lib/api";
+import { saveConnection, clearConnection, stopSshTunnel } from "@/lib/api";
 import { ConnectionForm } from "@/components/connection-form";
 import { ConnectionPanel } from "@/components/connection-panel";
 import { Database, Plus, X, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
+
+function tunnelIdsInTabs(tabs: ConnectionTab[]): Set<string> {
+  const ids = new Set<string>();
+  for (const t of tabs) {
+    const id = t.config.ssh?.tunnelId;
+    if (id) ids.add(id);
+  }
+  return ids;
+}
 
 export default function App() {
   const [tabs, setTabs] = useState<ConnectionTab[]>([]);
@@ -30,8 +39,12 @@ export default function App() {
 
   const handleCloseTab = useCallback((id: string) => {
     setTabs((prev) => {
+      const closing = prev.find((t) => t.id === id);
       const next = prev.filter((t) => t.id !== id);
-      // If we closed the active tab, switch to another or show new connection
+      const tunnelId = closing?.config.ssh?.tunnelId;
+      if (tunnelId && !tunnelIdsInTabs(next).has(tunnelId)) {
+        void stopSshTunnel(tunnelId);
+      }
       if (id === activeTabId) {
         if (next.length > 0) {
           const closedIdx = prev.findIndex((t) => t.id === id);
@@ -63,11 +76,14 @@ export default function App() {
   }, []);
 
   const handleDisconnectAll = useCallback(() => {
+    for (const id of tunnelIdsInTabs(tabs)) {
+      void stopSshTunnel(id);
+    }
     clearConnection();
     setTabs([]);
     setActiveTabId(null);
     setShowNewConnection(true);
-  }, []);
+  }, [tabs]);
 
   // No tabs open — show connection form full screen
   if (tabs.length === 0 && showNewConnection) {
